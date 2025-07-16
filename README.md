@@ -7,11 +7,11 @@ NES Emu Everywhere
 
 ## c# (WinForms)
 
-![WinForms](screenshots/Snipaste_2025-07-15_22-05-32.png)
+![WinForms](screenshots/Snipaste_2025-07-16_10-53-07.png)
 
 > `BitMap.SetPixel` is very slow! 
 
 ## c# (Raylib)
 
-![Raylib](screenshots/Snipaste_2025-07-15_22-09-05.png)
+![Raylib](screenshots/Snipaste_2025-07-16_10-53-20.png)
 
