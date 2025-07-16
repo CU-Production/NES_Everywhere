@@ -18,3 +18,7 @@ NES Emu Everywhere
 ## Godot (c#)
 
 ![Godot.NET](screenshots/Snipaste_2025-07-16_12-14-14.png)
+
+## s&box (c#)
+
+![s&box](screenshots/Snipaste_2025-07-16_16-15-21.png)
