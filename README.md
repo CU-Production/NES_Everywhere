@@ -7,7 +7,7 @@ NES Emu Everywhere
 
 ## c# (WinForms)
 
-![WinForms](screenshots/Snipaste_2025-07-16_10-53-07.png)
+![WinForms](screenshots/Snipaste_2025-07-16_16-32-37.png)
 
 > `BitMap.SetPixel` is very slow! 
 

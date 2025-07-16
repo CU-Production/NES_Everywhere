@@ -169,7 +169,7 @@ public class GameCanvas : Control
                 tmpBuffer.SetPixel(i, j, c2);
             }
         }
-        backBuffer.Graphics.DrawImage(tmpBuffer, 0, 0);
+        backBuffer.Graphics.DrawImage(tmpBuffer, 12, 10);
         
         Invalidate();
     }
