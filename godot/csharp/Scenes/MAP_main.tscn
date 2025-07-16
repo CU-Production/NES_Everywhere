@@ -1,0 +1,28 @@
+[gd_scene load_steps=5 format=3 uid="uid://b7e7urksw3pk5"]
+
+[ext_resource type="Texture2D" uid="uid://b0r8q4sxku1gt" path="res://icon.svg" id="1_2qoi8"]
+[ext_resource type="Script" uid="uid://cox0vxqky4vcl" path="res://Scenes/Sprite3d.cs" id="2_oexlw"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_atb7c"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_2qoi8"]
+
+[node name="Node3D" type="Node3D"]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -2.22026)
+mesh = SubResource("BoxMesh_atb7c")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.92585)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.734062, 0.569223, -0.370322, 0, 0.545327, 0.838224, 0.679083, -0.615308, 0.400304, -2.8403, 0.873279, 0)
+
+[node name="Sprite3D" type="Sprite3D" parent="."]
+texture = ExtResource("1_2qoi8")
+script = ExtResource("2_oexlw")
+
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="."]
+transform = Transform3D(100, 0, 0, 0, 100, 0, 0, 0, 100, 0, -1.40623, 0)
+mesh = SubResource("PlaneMesh_2qoi8")
