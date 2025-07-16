@@ -19,13 +19,13 @@ public class NesEmu
         SetTargetFPS(60);
         
         // init nes        
-        SWIGTYPE_p_agnes nes = agnes.agnes_make();
-        bool ok = agnes.agnes_load_ines_data_from_path(nes, "mario.nes");
+        Agnes nes = new Agnes();
+        bool ok = nes.LoadInesDataFromPath("mario.nes");
         if (!ok)
         {
             System.Diagnostics.Debug.WriteLine("mario.nes load failed!!!");
         }
-        agnes_input_t input = new agnes_input_t();
+        Agnes.InputState input1 = new Agnes.InputState();
 
         Image image = GenImageColor(screenWidth, screenHeight, Color.Green);
         Texture2D tmpTexture = LoadTextureFromImage(image);
@@ -50,22 +50,32 @@ public class NesEmu
                 frameCounter = 0;
             }
 
-            input.a      = IsKeyDown(KeyboardKey.Z);
-            input.b      = IsKeyDown(KeyboardKey.X);
-            input.select = IsKeyDown(KeyboardKey.Backspace);
-            input.start  = IsKeyDown(KeyboardKey.Enter);
-            input.up     = IsKeyDown(KeyboardKey.Up);
-            input.down   = IsKeyDown(KeyboardKey.Down);
-            input.left   = IsKeyDown(KeyboardKey.Left);
-            input.right  = IsKeyDown(KeyboardKey.Right);
+            input1.A      = IsKeyDown(KeyboardKey.Z);
+            input1.B      = IsKeyDown(KeyboardKey.X);
+            input1.Select = IsKeyDown(KeyboardKey.Backspace);
+            input1.Start  = IsKeyDown(KeyboardKey.Enter);
+            input1.Up     = IsKeyDown(KeyboardKey.Up);
+            input1.Down   = IsKeyDown(KeyboardKey.Down);
+            input1.Left   = IsKeyDown(KeyboardKey.Left);
+            input1.Right  = IsKeyDown(KeyboardKey.Right);
+            
+            byte input1U8 = 0;
+            if(input1.A      ) input1U8 |=  1 << 0;
+            if(input1.B      ) input1U8 |=  1 << 1;
+            if(input1.Select ) input1U8 |=  1 << 2;
+            if(input1.Start  ) input1U8 |=  1 << 3;
+            if(input1.Up     ) input1U8 |=  1 << 4;
+            if(input1.Down   ) input1U8 |=  1 << 5;
+            if(input1.Left   ) input1U8 |=  1 << 6;
+            if(input1.Right  ) input1U8 |=  1 << 7;
 
             // Draw
             //----------------------------------------------------------------------------------
             BeginDrawing();
             ClearBackground(Raylib_cs.Color.RayWhite);
             
-            agnes.agnes_set_input(nes, input, null);
-            ok = agnes.agnes_next_frame(nes);
+            nes.SetInputU8(input1U8, 0);
+            ok = nes.NextFrame();
             if (!ok)
             {
                 System.Diagnostics.Debug.WriteLine("agnes_next_frame failed!!!");
@@ -78,10 +88,10 @@ public class NesEmu
                 {
                     for (int i = 0; i < 256; i++)
                     {
-                        agnes_color_t color = agnes.agnes_get_screen_pixel(nes, i, j);
-                        pixels[j*256+i].R = color.r;
-                        pixels[j*256+i].G = color.g;
-                        pixels[j*256+i].B = color.b;
+                        Agnes.Color color = nes.GetScreenPixel(i, j);
+                        pixels[j*256+i].R = color.R;
+                        pixels[j*256+i].G = color.G;
+                        pixels[j*256+i].B = color.B;
                         pixels[j*256+i].A = 255;
                     }
                 }

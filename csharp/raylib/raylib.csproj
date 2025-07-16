@@ -13,7 +13,7 @@
     </ItemGroup>
 
     <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-      <Exec Command="copy &quot;$(SolutionDir)agnes.dll&quot; &quot;$(TargetDir)&quot;&#xA;copy &quot;$(SolutionDir)mario.nes&quot; &quot;$(TargetDir)&quot;" />
+      <Exec Command="copy &quot;$(SolutionDir)nes.dll&quot; &quot;$(TargetDir)&quot;&#xA;copy &quot;$(SolutionDir)mario.nes&quot; &quot;$(TargetDir)&quot;" />
     </Target>
 
 </Project>

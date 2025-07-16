@@ -50,8 +50,8 @@ public class GameCanvas : Control
     private float frameCounter;
     private float fps;
     
-    private SWIGTYPE_p_agnes nes;
-    private agnes_input_t input;
+    private Agnes nes;
+    private Agnes.InputState input1;
     private Bitmap tmpBuffer;
     
     private bool[] keyStates = new bool[256];
@@ -75,13 +75,13 @@ public class GameCanvas : Control
         Width = 256;
         Height = 240;
         
-        nes = agnes.agnes_make();
-        bool ok = agnes.agnes_load_ines_data_from_path(nes, "mario.nes");
+        nes = new Agnes();
+        bool ok = nes.LoadInesDataFromPath("mario.nes");
         if (!ok)
         {
             System.Diagnostics.Debug.WriteLine("mario.nes load failed!!!");
         }
-        input = new agnes_input_t();
+        input1 = new Agnes.InputState();
     }
     
     private void ResizeBuffer()
@@ -134,17 +134,27 @@ public class GameCanvas : Control
         
         backBuffer.Graphics.Clear(Color.White);
 
-        input.a      = keyStates[(int)Keys.J];
-        input.b      = keyStates[(int)Keys.K];
-        input.select = keyStates[(int)Keys.Back];
-        input.start  = keyStates[(int)Keys.Return];
-        input.up     = keyStates[(int)Keys.W];
-        input.down   = keyStates[(int)Keys.S];
-        input.left   = keyStates[(int)Keys.A];
-        input.right  = keyStates[(int)Keys.D];
+        input1.A      = keyStates[(int)Keys.J];
+        input1.B      = keyStates[(int)Keys.K];
+        input1.Select = keyStates[(int)Keys.Back];
+        input1.Start  = keyStates[(int)Keys.Enter];
+        input1.Up     = keyStates[(int)Keys.W];
+        input1.Down   = keyStates[(int)Keys.S];
+        input1.Left   = keyStates[(int)Keys.A];
+        input1.Right  = keyStates[(int)Keys.D];
         
-        agnes.agnes_set_input(nes, input, null);
-        bool ok = agnes.agnes_next_frame(nes);
+        byte input1U8 = 0;
+        if(input1.A      ) input1U8 |=  1 << 0;
+        if(input1.B      ) input1U8 |=  1 << 1;
+        if(input1.Select ) input1U8 |=  1 << 2;
+        if(input1.Start  ) input1U8 |=  1 << 3;
+        if(input1.Up     ) input1U8 |=  1 << 4;
+        if(input1.Down   ) input1U8 |=  1 << 5;
+        if(input1.Left   ) input1U8 |=  1 << 6;
+        if(input1.Right  ) input1U8 |=  1 << 7;
+        
+        nes.SetInputU8(input1U8, 0);
+        bool ok = nes.NextFrame();
         if (!ok)
         {
             System.Diagnostics.Debug.WriteLine("agnes_next_frame failed!!!");
@@ -154,8 +164,8 @@ public class GameCanvas : Control
         {
             for (int i = 0; i < 256; i++)
             {
-                agnes_color_t color = agnes.agnes_get_screen_pixel(nes, i, j);
-                Color c2 = Color.FromArgb(255, color.r, color.g, color.b);
+                Agnes.Color color = nes.GetScreenPixel(i, j);
+                Color c2 = Color.FromArgb(255, color.R, color.G, color.B);
                 tmpBuffer.SetPixel(i, j, c2);
             }
         }

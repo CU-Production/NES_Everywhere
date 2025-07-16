@@ -569,6 +569,11 @@ void agnes_set_input(agnes_t *agn, const agnes_input_t *input_1, const agnes_inp
     }
 }
 
+void agnes_set_input_u8(agnes_t *agn, uint8_t input_1, uint8_t input_2) {
+    agn->controllers[0].state = input_1;
+    agn->controllers[1].state = input_2;
+}
+
 size_t agnes_state_size() {
     return sizeof(agnes_state_t);
 }
