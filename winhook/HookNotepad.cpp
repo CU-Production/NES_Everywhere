@@ -1,6 +1,7 @@
 #define UNICODE
 #include <windows.h>
 #include <stdio.h>
+#include "agnes.h"
 #pragma comment(lib, "msimg32.lib")  // for AlphaBlend
 
 void DrawNoiseOverlay(HWND hwnd);
@@ -15,22 +16,33 @@ int g_noiseOffset = 0;
 bool g_needsRedraw = false;
 HMODULE g_hModule = NULL;
 
+// Agnes模拟器相关变量
+agnes_t* g_agnes = NULL;
+bool g_agnesInitialized = false;
+
 // 保存原始窗口过程
 WNDPROC g_originalWndProc = NULL;
 
 // 自定义窗口过程 - 直接拦截消息
 LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    // 处理WM_TIMER消息 - 这是动画的关键
+    // 处理WM_TIMER消息 - 运行NES模拟器
     if (uMsg == WM_TIMER && wParam == 1) {
-        g_noiseOffset = (g_noiseOffset + 2) % 50;
-        
-        // 输出调试信息确认定时器工作
-        wchar_t debugMsg[100];
-        swprintf_s(debugMsg, L"WM_TIMER processed: offset = %d", g_noiseOffset);
-        OutputDebugString(debugMsg);
-        
-        // 触发重绘
-        InvalidateRect(hwnd, NULL, FALSE);
+        if (g_agnes && g_agnesInitialized) {
+            // 运行模拟器到下一帧
+            bool newFrame = agnes_next_frame(g_agnes);
+            if (newFrame) {
+                // 输出调试信息确认模拟器正在运行
+                OutputDebugString(L"NES frame updated");
+                
+                // 触发重绘显示新的游戏画面
+                InvalidateRect(hwnd, NULL, FALSE);
+            }
+        } else {
+            // 如果模拟器未初始化，仍然显示旧的动画
+            g_noiseOffset = (g_noiseOffset + 2) % 50;
+            OutputDebugString(L"Fallback animation");
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
         return 0; // 消费这个定时器消息
     }
     
@@ -41,11 +53,6 @@ LRESULT CALLBACK SubclassWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         
         // 然后立即绘制我们的效果
         DrawNoiseOverlay(hwnd);
-        
-        // 输出当前偏移值确认动画
-        wchar_t debugMsg[100];
-        swprintf_s(debugMsg, L"WM_PAINT processed, current offset: %d", g_noiseOffset);
-        OutputDebugString(debugMsg);
         
         return result;
     }
@@ -141,54 +148,138 @@ HWND FindNotepadEditWindow() {
     return NULL;
 }
 
-// 增强的绘制函数 - 确保绘制能够保持
+
+// // 增强的绘制函数 - 确保绘制能够保持
+// void DrawNoiseOverlay(HWND hwnd) {
+//     if (!g_hNoiseBitmap || !hwnd) return;
+//
+//     // 使用GetWindowDC获取整个窗口的DC，包括非客户区
+//     HDC hdc = GetWindowDC(hwnd);
+//     if (!hdc) return;
+//
+//     RECT rect;
+//     GetClientRect(hwnd, &rect);
+//
+//     // 绘制多个测试元素确保可见性
+//     if (rect.right > 100 && rect.bottom > 100) {
+//         // 1. 绘制移动的红色方块
+//         int x = 50 + g_noiseOffset;
+//         int y = 50 + (g_noiseOffset / 2);
+//
+//         HBRUSH hRedBrush = CreateSolidBrush(RGB(255, 100, 100));
+//         RECT redRect = {x, y, x + 30, y + 30};
+//         FillRect(hdc, &redRect, hRedBrush);
+//         DeleteObject(hRedBrush);
+//
+//         // 2. 绘制一个固定的蓝色方块作为参考
+//         HBRUSH hBlueBrush = CreateSolidBrush(RGB(100, 100, 255));
+//         RECT blueRect = {10, 10, 40, 40};
+//         FillRect(hdc, &blueRect, hBlueBrush);
+//         DeleteObject(hBlueBrush);
+//
+//         // 3. 绘制移动的噪声点
+//         for (int i = 0; i < 30; i++) {
+//             int px = (g_noiseOffset * 3 + i * 7) % (rect.right - 50) + 25;
+//             int py = (g_noiseOffset * 2 + i * 11) % (rect.bottom - 50) + 25;
+//
+//             // 绘制较大的噪声点
+//             HBRUSH hNoiseBrush = CreateSolidBrush(RGB(128, 128, 128));
+//             RECT noiseRect = {px, py, px + 3, py + 3};
+//             FillRect(hdc, &noiseRect, hNoiseBrush);
+//             DeleteObject(hNoiseBrush);
+//         }
+//
+//         // 4. 绘制一些文字覆盖
+//         SetBkMode(hdc, TRANSPARENT);
+//         SetTextColor(hdc, RGB(255, 0, 255)); // 紫色文字
+//         wchar_t overlayText[50];
+//         swprintf_s(overlayText, L"NOISE OVERLAY %d", g_noiseOffset);
+//         TextOut(hdc, 100, 100, overlayText, wcslen(overlayText));
+//     }
+//
+//     // 强制立即显示
+//     GdiFlush();
+//     ReleaseDC(hwnd, hdc);
+// }
+
+// NES画面绘制函数
 void DrawNoiseOverlay(HWND hwnd) {
-    if (!g_hNoiseBitmap || !hwnd) return;
-    
+    if (!hwnd) return;
+
+    HDC hdc = GetDC(hwnd);
     // 使用GetWindowDC获取整个窗口的DC，包括非客户区
-    HDC hdc = GetWindowDC(hwnd);
+    // HDC hdc = GetWindowDC(hwnd);
     if (!hdc) return;
-    
+
     RECT rect;
     GetClientRect(hwnd, &rect);
-    
-    // 绘制多个测试元素确保可见性
-    if (rect.right > 100 && rect.bottom > 100) {
-        // 1. 绘制移动的红色方块
-        int x = 50 + g_noiseOffset;
-        int y = 50 + (g_noiseOffset / 2);
-        
-        HBRUSH hRedBrush = CreateSolidBrush(RGB(255, 100, 100));
-        RECT redRect = {x, y, x + 30, y + 30};
-        FillRect(hdc, &redRect, hRedBrush);
-        DeleteObject(hRedBrush);
-        
-        // 2. 绘制一个固定的蓝色方块作为参考
-        HBRUSH hBlueBrush = CreateSolidBrush(RGB(100, 100, 255));
-        RECT blueRect = {10, 10, 40, 40};
-        FillRect(hdc, &blueRect, hBlueBrush);
-        DeleteObject(hBlueBrush);
-        
-        // 3. 绘制移动的噪声点
-        for (int i = 0; i < 30; i++) {
-            int px = (g_noiseOffset * 3 + i * 7) % (rect.right - 50) + 25;
-            int py = (g_noiseOffset * 2 + i * 11) % (rect.bottom - 50) + 25;
-            
-            // 绘制较大的噪声点
-            HBRUSH hNoiseBrush = CreateSolidBrush(RGB(128, 128, 128));
-            RECT noiseRect = {px, py, px + 3, py + 3};
-            FillRect(hdc, &noiseRect, hNoiseBrush);
-            DeleteObject(hNoiseBrush);
+
+    if (g_agnes && g_agnesInitialized)
+    {
+        // 绘制NES游戏画面
+
+
+        // 左上角显示
+        int offsetX = 0;
+        int offsetY = 30;
+
+        // 创建内存DC来绘制NES画面
+        HDC memDC = CreateCompatibleDC(hdc);
+        HBITMAP nesFrame = CreateCompatibleBitmap(hdc, AGNES_SCREEN_WIDTH, AGNES_SCREEN_HEIGHT);
+        HBITMAP oldBitmap = (HBITMAP)SelectObject(memDC, nesFrame);
+
+        // 逐像素绘制NES画面
+        for (int y = 0; y < AGNES_SCREEN_HEIGHT; y++) {
+            for (int x = 0; x < AGNES_SCREEN_WIDTH; x++) {
+                // 获取NES像素颜色
+                agnes_color_t color = agnes_get_screen_pixel(g_agnes, x, y);
+
+                // 绘制像素
+                SetPixel(memDC, x, y, RGB(color.r, color.g, color.b)); //very slow
+            }
         }
-        
-        // 4. 绘制一些文字覆盖
+
+        // 将NES画面绘制到记事本上
+        BitBlt(hdc, offsetX, offsetY, AGNES_SCREEN_WIDTH, AGNES_SCREEN_HEIGHT, memDC, 0, 0, SRCCOPY);
+
+        // 绘制一些半透明的干扰效果
+        BLENDFUNCTION blend = {0};
+        blend.BlendOp = AC_SRC_OVER;
+        blend.SourceConstantAlpha = 64; // 25% 透明度
+        blend.AlphaFormat = 0;
+
+        // 在游戏画面上叠加一些噪声点
+        for (int i = 0; i < 20; i++) {
+            int px = (GetTickCount() / 100 + i * 17) % rect.right;
+            int py = (GetTickCount() / 150 + i * 23) % rect.bottom;
+            SetPixel(hdc, px, py, RGB(255, 255, 255));
+        }
+
+        // 显示游戏信息
         SetBkMode(hdc, TRANSPARENT);
+        // SetTextColor(hdc, RGB(255, 255, 0)); // 黄色文字
         SetTextColor(hdc, RGB(255, 0, 255)); // 紫色文字
-        wchar_t overlayText[50];
-        swprintf_s(overlayText, L"NOISE OVERLAY %d", g_noiseOffset);
-        TextOut(hdc, 100, 100, overlayText, wcslen(overlayText));
+        wchar_t gameText[] = L"NES RUNNING ON NOTEPAD!";
+        TextOut(hdc, 10, 10, gameText, wcslen(gameText));
+
+        SelectObject(memDC, oldBitmap);
+        DeleteObject(nesFrame);
+        DeleteDC(memDC);
+
+    } else {
+        // 如果模拟器未初始化，显示错误信息和备用动画
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(255, 0, 0)); // 红色文字
+        wchar_t errorText[] = L"NES EMULATOR NOT LOADED";
+        TextOut(hdc, 10, 10, errorText, wcslen(errorText));
+
+        // 显示简单的备用动画
+        HBRUSH hBrush = CreateSolidBrush(RGB(255, 100, 100));
+        RECT animRect = {50 + g_noiseOffset, 50, 80 + g_noiseOffset, 80};
+        FillRect(hdc, &animRect, hBrush);
+        DeleteObject(hBrush);
     }
-    
+
     // 强制立即显示
     GdiFlush();
     ReleaseDC(hwnd, hdc);
@@ -210,14 +301,42 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                 return FALSE;
             }
             
-            // 创建简单的噪声纹理
-            g_hNoiseBitmap = CreateSimpleNoiseTexture(50, 50);
-            if (!g_hNoiseBitmap) {
-                OutputDebugString(L"Failed to create noise texture!");
-                return FALSE;
+            // 初始化Agnes NES模拟器
+            OutputDebugString(L"Initializing Agnes NES emulator...");
+            g_agnes = agnes_make();
+            if (g_agnes) {
+                // 构建ROM文件路径
+                char currentDir[MAX_PATH];
+                GetCurrentDirectoryA(MAX_PATH, currentDir);
+                char romPath[MAX_PATH];
+                sprintf_s(romPath, "%s\\mario.nes", currentDir);
+                
+                // 加载超级马里奥ROM
+                if (agnes_load_ines_data_from_path(g_agnes, romPath)) {
+                    g_agnesInitialized = true;
+                    OutputDebugString(L"Mario ROM loaded successfully!");
+                    
+                    // 设置一些默认输入（让马里奥自动向右走）
+                    agnes_input_t input = {0};
+                    input.right = true; // 持续按右键
+                    agnes_set_input(g_agnes, &input, NULL);
+                    
+                } else {
+                    OutputDebugString(L"Failed to load Mario ROM!");
+                    wchar_t romPathW[MAX_PATH];
+                    MultiByteToWideChar(CP_ACP, 0, romPath, -1, romPathW, MAX_PATH);
+                    wchar_t debugMsg[512];
+                    swprintf_s(debugMsg, L"ROM path: %s", romPathW);
+                    OutputDebugString(debugMsg);
+                }
+            } else {
+                OutputDebugString(L"Failed to create Agnes emulator instance!");
             }
             
-            // 使用窗口子类化而不是hook
+            // 创建简单的噪声纹理作为备用
+            g_hNoiseBitmap = CreateSimpleNoiseTexture(50, 50);
+            
+            // 使用窗口子类化
             g_originalWndProc = (WNDPROC)SetWindowLongPtr(g_hTargetWindow, GWLP_WNDPROC, (LONG_PTR)SubclassWndProc);
             if (!g_originalWndProc) {
                 OutputDebugString(L"Failed to subclass window!");
@@ -226,56 +345,24 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             
             OutputDebugString(L"Window subclassed successfully!");
             
-            // 创建与窗口关联的定时器，而不是全局定时器
-            g_timerId = SetTimer(g_hTargetWindow, 1, 200, NULL); // 使用窗口定时器
+            // 创建定时器 - 60FPS for smooth NES emulation
+            g_timerId = SetTimer(g_hTargetWindow, 1, 16, NULL); // ~60 FPS
             if (g_timerId) {
-                wchar_t timerMsg[100];
-                swprintf_s(timerMsg, L"Window timer created successfully! Timer ID: %d", g_timerId);
-                OutputDebugString(timerMsg);
+                OutputDebugString(L"High-speed timer created for NES emulation!");
                 
-                // 验证并设置记事本主窗口标题
+                // 设置记事本标题
                 if (g_hNotepadMain) {
-                    wchar_t currentTitle[256];
-                    GetWindowText(g_hNotepadMain, currentTitle, 256);
-                    wchar_t beforeMsg[512];
-                    swprintf_s(beforeMsg, L"Before title change - Current title: %s", currentTitle);
-                    OutputDebugString(beforeMsg);
-                    
-                    BOOL titleResult = SetWindowText(g_hNotepadMain, L"Notepad - Noise Effect Active");
-                    if (titleResult) {
-                        OutputDebugString(L"Title changed successfully!");
-                        
-                        // 验证标题是否真的改了
-                        Sleep(50);
-                        wchar_t newTitle[256];
-                        GetWindowText(g_hNotepadMain, newTitle, 256);
-                        wchar_t afterMsg[512];
-                        swprintf_s(afterMsg, L"After title change - New title: %s", newTitle);
-                        OutputDebugString(afterMsg);
-                    } else {
-                        DWORD error = GetLastError();
-                        wchar_t errorMsg[200];
-                        swprintf_s(errorMsg, L"SetWindowText failed! Error: %d", error);
-                        OutputDebugString(errorMsg);
-                    }
-                } else {
-                    OutputDebugString(L"g_hNotepadMain is NULL, cannot set title!");
+                    SetWindowText(g_hNotepadMain, L"Notepad - NES Emulator Active");
                 }
                 
                 // 立即测试绘制
-                OutputDebugString(L"Testing initial draw...");
                 DrawNoiseOverlay(g_hTargetWindow);
-                
-                // 强制重绘一次以触发定时器循环
                 InvalidateRect(g_hTargetWindow, NULL, TRUE);
                 UpdateWindow(g_hTargetWindow);
                 
-                OutputDebugString(L"Initialization complete!");
+                OutputDebugString(L"NES emulator initialization complete!");
             } else {
-                DWORD error = GetLastError();
-                wchar_t errorMsg[200];
-                swprintf_s(errorMsg, L"Window timer creation failed! Error: %d", error);
-                OutputDebugString(errorMsg);
+                OutputDebugString(L"Timer creation failed!");
                 return FALSE;
             }
             break;
@@ -283,10 +370,20 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             
         case DLL_PROCESS_DETACH:
         {
-            // 清理资源
+            OutputDebugString(L"Cleaning up NES emulator...");
+            
+            // 清理定时器
             if (g_timerId && g_hTargetWindow) {
-                KillTimer(g_hTargetWindow, g_timerId); // 使用窗口定时器的清理方法
+                KillTimer(g_hTargetWindow, g_timerId);
                 g_timerId = 0;
+            }
+            
+            // 清理Agnes模拟器
+            if (g_agnes) {
+                agnes_destroy(g_agnes);
+                g_agnes = NULL;
+                g_agnesInitialized = false;
+                OutputDebugString(L"Agnes emulator destroyed");
             }
             
             // 恢复原始窗口过程
@@ -303,6 +400,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                 DeleteObject(g_hNoiseBitmap);
                 g_hNoiseBitmap = NULL;
             }
+            
+            OutputDebugString(L"Cleanup complete!");
             break;
         }
     }
