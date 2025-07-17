@@ -54,7 +54,7 @@ bool InjectDLL(DWORD pid, const char* dllPath) {
 
     WaitForSingleObject(hThread, INFINITE);
 
-    // 获取LoadLibrary的返回值，检查DLL是否成功加载
+    // Get LoadLibrary return value, check if DLL loaded successfully
     DWORD exitCode;
     GetExitCodeThread(hThread, &exitCode);
     if (exitCode == 0) {
@@ -81,7 +81,7 @@ int main() {
 
     std::cout << "Found notepad.exe with PID: " << pid << std::endl;
 
-    // 获取当前程序的目录，构建DLL的绝对路径
+    // Get current program directory and build absolute path for DLL
     char currentDir[MAX_PATH];
     GetCurrentDirectoryA(MAX_PATH, currentDir);
     
@@ -90,7 +90,7 @@ int main() {
     
     std::cout << "DLL Path: " << dllPath << std::endl;
 
-    // 检查DLL文件是否存在
+    // Check if DLL file exists
     DWORD fileAttr = GetFileAttributesA(dllPath);
     if (fileAttr == INVALID_FILE_ATTRIBUTES) {
         std::cout << "DLL file not found: " << dllPath << std::endl;
@@ -102,8 +102,6 @@ int main() {
     } else {
         std::cout << "DLL inject failed!" << std::endl;
     }
-    
-    std::cout << "Press any key to continue..." << std::endl;
-    getchar();
+
     return 0;
 }
