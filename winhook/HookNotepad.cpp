@@ -20,6 +20,12 @@ HMODULE g_hModule = NULL;
 agnes_t* g_agnes = NULL;
 bool g_agnesInitialized = false;
 
+// NES画面缓冲区 - 使用更高效的方法
+HBITMAP g_nesBitmap = NULL;
+HDC g_nesMemDC = NULL;
+BITMAPINFO g_nesBitmapInfo = {0};
+uint32_t* g_nesPixelBuffer = NULL; // 32位RGBA像素缓冲区
+
 // 保存原始窗口过程
 WNDPROC g_originalWndProc = NULL;
 
@@ -148,141 +154,142 @@ HWND FindNotepadEditWindow() {
     return NULL;
 }
 
-
-// // 增强的绘制函数 - 确保绘制能够保持
-// void DrawNoiseOverlay(HWND hwnd) {
-//     if (!g_hNoiseBitmap || !hwnd) return;
-//
-//     // 使用GetWindowDC获取整个窗口的DC，包括非客户区
-//     HDC hdc = GetWindowDC(hwnd);
-//     if (!hdc) return;
-//
-//     RECT rect;
-//     GetClientRect(hwnd, &rect);
-//
-//     // 绘制多个测试元素确保可见性
-//     if (rect.right > 100 && rect.bottom > 100) {
-//         // 1. 绘制移动的红色方块
-//         int x = 50 + g_noiseOffset;
-//         int y = 50 + (g_noiseOffset / 2);
-//
-//         HBRUSH hRedBrush = CreateSolidBrush(RGB(255, 100, 100));
-//         RECT redRect = {x, y, x + 30, y + 30};
-//         FillRect(hdc, &redRect, hRedBrush);
-//         DeleteObject(hRedBrush);
-//
-//         // 2. 绘制一个固定的蓝色方块作为参考
-//         HBRUSH hBlueBrush = CreateSolidBrush(RGB(100, 100, 255));
-//         RECT blueRect = {10, 10, 40, 40};
-//         FillRect(hdc, &blueRect, hBlueBrush);
-//         DeleteObject(hBlueBrush);
-//
-//         // 3. 绘制移动的噪声点
-//         for (int i = 0; i < 30; i++) {
-//             int px = (g_noiseOffset * 3 + i * 7) % (rect.right - 50) + 25;
-//             int py = (g_noiseOffset * 2 + i * 11) % (rect.bottom - 50) + 25;
-//
-//             // 绘制较大的噪声点
-//             HBRUSH hNoiseBrush = CreateSolidBrush(RGB(128, 128, 128));
-//             RECT noiseRect = {px, py, px + 3, py + 3};
-//             FillRect(hdc, &noiseRect, hNoiseBrush);
-//             DeleteObject(hNoiseBrush);
-//         }
-//
-//         // 4. 绘制一些文字覆盖
-//         SetBkMode(hdc, TRANSPARENT);
-//         SetTextColor(hdc, RGB(255, 0, 255)); // 紫色文字
-//         wchar_t overlayText[50];
-//         swprintf_s(overlayText, L"NOISE OVERLAY %d", g_noiseOffset);
-//         TextOut(hdc, 100, 100, overlayText, wcslen(overlayText));
-//     }
-//
-//     // 强制立即显示
-//     GdiFlush();
-//     ReleaseDC(hwnd, hdc);
-// }
-
-// NES画面绘制函数
+// 高效的NES画面绘制函数
 void DrawNoiseOverlay(HWND hwnd) {
     if (!hwnd) return;
-
+    
     HDC hdc = GetDC(hwnd);
-    // 使用GetWindowDC获取整个窗口的DC，包括非客户区
-    // HDC hdc = GetWindowDC(hwnd);
     if (!hdc) return;
-
+    
     RECT rect;
     GetClientRect(hwnd, &rect);
-
-    if (g_agnes && g_agnesInitialized)
+    
+    if (g_agnes && g_agnesInitialized && g_nesPixelBuffer && g_nesMemDC)
     {
-        // 绘制NES游戏画面
-
-
-        // 左上角显示
-        int offsetX = 0;
-        int offsetY = 30;
-
-        // 创建内存DC来绘制NES画面
-        HDC memDC = CreateCompatibleDC(hdc);
-        HBITMAP nesFrame = CreateCompatibleBitmap(hdc, AGNES_SCREEN_WIDTH, AGNES_SCREEN_HEIGHT);
-        HBITMAP oldBitmap = (HBITMAP)SelectObject(memDC, nesFrame);
-
-        // 逐像素绘制NES画面
+        // 高效方法：直接写入内存缓冲区
+        uint32_t* pixel = g_nesPixelBuffer;
+        
+        // 快速填充整个NES画面
         for (int y = 0; y < AGNES_SCREEN_HEIGHT; y++) {
             for (int x = 0; x < AGNES_SCREEN_WIDTH; x++) {
                 // 获取NES像素颜色
                 agnes_color_t color = agnes_get_screen_pixel(g_agnes, x, y);
-
-                // 绘制像素
-                SetPixel(memDC, x, y, RGB(color.r, color.g, color.b)); //very slow
+                
+                // 直接写入32位像素 (BGRA格式，Windows标准)
+                *pixel++ = (color.a << 24) | (color.r << 16) | (color.g << 8) | color.b;
             }
         }
-
-        // 将NES画面绘制到记事本上
-        BitBlt(hdc, offsetX, offsetY, AGNES_SCREEN_WIDTH, AGNES_SCREEN_HEIGHT, memDC, 0, 0, SRCCOPY);
-
-        // 绘制一些半透明的干扰效果
-        BLENDFUNCTION blend = {0};
-        blend.BlendOp = AC_SRC_OVER;
-        blend.SourceConstantAlpha = 64; // 25% 透明度
-        blend.AlphaFormat = 0;
-
-        // 在游戏画面上叠加一些噪声点
-        for (int i = 0; i < 20; i++) {
+        
+        // 计算显示位置和缩放
+        float scaleX = (float)(rect.right - 40) / AGNES_SCREEN_WIDTH;
+        float scaleY = (float)(rect.bottom - 60) / AGNES_SCREEN_HEIGHT;
+        float scale = min(scaleX, scaleY);
+        scale = max(scale, 1.0f); // 至少1倍大小
+        
+        int displayWidth = (int)(AGNES_SCREEN_WIDTH * scale);
+        int displayHeight = (int)(AGNES_SCREEN_HEIGHT * scale);
+        
+        // 左上角显示，留出标题空间
+        int offsetX = 10;
+        int offsetY = 30;
+        
+        // 使用StretchBlt进行高效缩放绘制
+        StretchBlt(hdc, offsetX, offsetY, displayWidth, displayHeight,
+                   g_nesMemDC, 0, 0, AGNES_SCREEN_WIDTH, AGNES_SCREEN_HEIGHT, SRCCOPY);
+        
+        // 绘制一些干扰效果（减少数量以提高性能）
+        for (int i = 0; i < 10; i++) {
             int px = (GetTickCount() / 100 + i * 17) % rect.right;
             int py = (GetTickCount() / 150 + i * 23) % rect.bottom;
             SetPixel(hdc, px, py, RGB(255, 255, 255));
         }
-
+        
         // 显示游戏信息
         SetBkMode(hdc, TRANSPARENT);
-        // SetTextColor(hdc, RGB(255, 255, 0)); // 黄色文字
         SetTextColor(hdc, RGB(255, 0, 255)); // 紫色文字
-        wchar_t gameText[] = L"NES RUNNING ON NOTEPAD!";
+        wchar_t gameText[] = L"NES RUNNING ON NOTEPAD! (High Performance)";
         TextOut(hdc, 10, 10, gameText, wcslen(gameText));
-
-        SelectObject(memDC, oldBitmap);
-        DeleteObject(nesFrame);
-        DeleteDC(memDC);
-
+        
+        // 显示性能信息
+        static DWORD lastTime = 0;
+        static int frameCount = 0;
+        static float fps = 0.0f;
+        
+        DWORD currentTime = GetTickCount();
+        frameCount++;
+        
+        if (currentTime - lastTime > 1000) { // 每秒更新一次FPS
+            fps = frameCount * 1000.0f / (currentTime - lastTime);
+            frameCount = 0;
+            lastTime = currentTime;
+        }
+        
+        wchar_t fpsText[100];
+        swprintf_s(fpsText, L"FPS: %.1f | Scale: %.1fx", fps, scale);
+        TextOut(hdc, 10, rect.bottom - 40, fpsText, wcslen(fpsText));
+        
     } else {
-        // 如果模拟器未初始化，显示错误信息和备用动画
+        // 如果模拟器未初始化，显示错误信息
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(255, 0, 0)); // 红色文字
         wchar_t errorText[] = L"NES EMULATOR NOT LOADED";
         TextOut(hdc, 10, 10, errorText, wcslen(errorText));
-
+        
         // 显示简单的备用动画
         HBRUSH hBrush = CreateSolidBrush(RGB(255, 100, 100));
         RECT animRect = {50 + g_noiseOffset, 50, 80 + g_noiseOffset, 80};
         FillRect(hdc, &animRect, hBrush);
         DeleteObject(hBrush);
     }
-
-    // 强制立即显示
-    GdiFlush();
+    
     ReleaseDC(hwnd, hdc);
+}
+
+// 初始化NES显示缓冲区
+bool InitializeNESDisplay() {
+    // 设置DIB格式
+    g_nesBitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    g_nesBitmapInfo.bmiHeader.biWidth = AGNES_SCREEN_WIDTH;
+    g_nesBitmapInfo.bmiHeader.biHeight = -AGNES_SCREEN_HEIGHT; // 负值表示top-down DIB
+    g_nesBitmapInfo.bmiHeader.biPlanes = 1;
+    g_nesBitmapInfo.bmiHeader.biBitCount = 32; // 32位RGBA
+    g_nesBitmapInfo.bmiHeader.biCompression = BI_RGB;
+    g_nesBitmapInfo.bmiHeader.biSizeImage = 0;
+    
+    // 创建DIB
+    HDC hdc = GetDC(NULL);
+    g_nesBitmap = CreateDIBSection(hdc, &g_nesBitmapInfo, DIB_RGB_COLORS, 
+                                   (void**)&g_nesPixelBuffer, NULL, 0);
+    ReleaseDC(NULL, hdc);
+    
+    if (!g_nesBitmap || !g_nesPixelBuffer) {
+        OutputDebugString(L"Failed to create NES display buffer!");
+        return false;
+    }
+    
+    // 创建内存DC
+    g_nesMemDC = CreateCompatibleDC(NULL);
+    if (!g_nesMemDC) {
+        OutputDebugString(L"Failed to create NES memory DC!");
+        return false;
+    }
+    
+    SelectObject(g_nesMemDC, g_nesBitmap);
+    OutputDebugString(L"NES display buffer initialized successfully!");
+    return true;
+}
+
+// 清理NES显示缓冲区
+void CleanupNESDisplay() {
+    if (g_nesMemDC) {
+        DeleteDC(g_nesMemDC);
+        g_nesMemDC = NULL;
+    }
+    if (g_nesBitmap) {
+        DeleteObject(g_nesBitmap);
+        g_nesBitmap = NULL;
+    }
+    g_nesPixelBuffer = NULL;
 }
 
 // DLL入口点
@@ -316,6 +323,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                     g_agnesInitialized = true;
                     OutputDebugString(L"Mario ROM loaded successfully!");
                     
+                    // 初始化高效的显示缓冲区
+                    if (InitializeNESDisplay()) {
+                        OutputDebugString(L"NES display buffer created successfully!");
+                    } else {
+                        OutputDebugString(L"Failed to create NES display buffer!");
+                        g_agnesInitialized = false;
+                    }
+                    
                     // 设置一些默认输入（让马里奥自动向右走）
                     agnes_input_t input = {0};
                     input.right = true; // 持续按右键
@@ -336,6 +351,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             // 创建简单的噪声纹理作为备用
             g_hNoiseBitmap = CreateSimpleNoiseTexture(50, 50);
             
+            // 初始化NES显示缓冲区
+            InitializeNESDisplay();
+
             // 使用窗口子类化
             g_originalWndProc = (WNDPROC)SetWindowLongPtr(g_hTargetWindow, GWLP_WNDPROC, (LONG_PTR)SubclassWndProc);
             if (!g_originalWndProc) {
@@ -385,6 +403,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                 g_agnesInitialized = false;
                 OutputDebugString(L"Agnes emulator destroyed");
             }
+            
+            // 清理NES显示缓冲区
+            CleanupNESDisplay();
             
             // 恢复原始窗口过程
             if (g_hTargetWindow && g_originalWndProc) {
